@@ -58,13 +58,15 @@ contract Token is IERC20, IMintableToken, IDividends {
     require(to != address(0), "transfer to zero address");
     require(balanceOf[from] >= value, "insufficient balance");
 
+    bool isNewHolder = balanceOf[to] == 0;
+
     balanceOf[from] = balanceOf[from].sub(value);
     balanceOf[to] = balanceOf[to].add(value);
 
     if (balanceOf[from] == 0) {
         _removeHolder(from);
     }
-    if (balanceOf[to] > 0) {
+    if (isNewHolder && value > 0) {
         _addHolder(to);
     }
 
@@ -77,10 +79,12 @@ contract Token is IERC20, IMintableToken, IDividends {
     require(msg.value > 0, "No ETH supplied");
     uint256 amount = msg.value;
     
+    bool isNewHolder = balanceOf[msg.sender] == 0;
+
     balanceOf[msg.sender] = balanceOf[msg.sender].add(amount);
     totalSupply = totalSupply.add(amount);
     
-    if (balanceOf[msg.sender] > 0) {
+    if (isNewHolder) {
         _addHolder(msg.sender);
     }
 
@@ -112,20 +116,23 @@ contract Token is IERC20, IMintableToken, IDividends {
     if (index == 0 || index > holders.length) {
         return address(0);
     }
-    return holders[index.sub(1)];
+    return holders[index - 1];
   }
 
   function recordDividend() external payable override {
-    require(msg.value > 0, "No ETH supplied");
-    require(totalSupply > 0, "No tokens");
+    uint256 _value = msg.value;
+    require(_value > 0, "No ETH supplied");
 
-    for (uint256 i = 0; i < holders.length; i++) {
+    uint256 _totalSupply = totalSupply;
+    require(_totalSupply > 0, "No tokens");
+
+    uint256 length = holders.length;
+    for (uint256 i = 0; i < length; i++) {
         address holder = holders[i];
         uint256 balance = balanceOf[holder];
-        if (balance > 0) {
-            uint256 dividend = msg.value.mul(balance).div(totalSupply);
-            withdrawableDividends[holder] = withdrawableDividends[holder].add(dividend);
-        }
+        // balance is guaranteed to be > 0 because of efficient holder tracking
+        uint256 dividend = _value.mul(balance).div(_totalSupply);
+        withdrawableDividends[holder] = withdrawableDividends[holder].add(dividend);
     }
   }
 
@@ -146,23 +153,21 @@ contract Token is IERC20, IMintableToken, IDividends {
   // Holder Management
 
   function _addHolder(address account) internal {
-    if (holderIndex[account] == 0) {
-        holders.push(account);
-        holderIndex[account] = holders.length;
-    }
+    holders.push(account);
+    holderIndex[account] = holders.length;
   }
 
   function _removeHolder(address account) internal {
     uint256 index = holderIndex[account];
-    if (index != 0) {
-        uint256 lastIndex = holders.length;
+    uint256 lastIndex = holders.length;
+
+    if (index != lastIndex) {
         address lastHolder = holders[lastIndex.sub(1)];
-        
         holders[index.sub(1)] = lastHolder;
         holderIndex[lastHolder] = index;
-        
-        holders.pop();
-        holderIndex[account] = 0;
     }
+
+    holders.pop();
+    holderIndex[account] = 0;
   }
 }
